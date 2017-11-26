@@ -1,20 +1,16 @@
-#ifndef	F_CPU
-#define F_CPU 16000000UL
-#endif
+/*	Author :Josh Madrid (Jmadr004@ucr.edu)
+ *	Lab Section: 022
+ *	Assignment: Final Project Slave Code
+ *	Exercise Description: Created: 10/31/2017
+ *	
+ *	I acknowledge all content contained herein, excluding template or example
+ *	code, is my own original work.
+ */ 
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
-#include <util/delay.h>
-
-
-unsigned char SetBit(unsigned char x, unsigned char k, unsigned char b)
-{
-	return (b ? (x|(0x01<<k)) :(x &~(0x01<<k)) );
-			//set bit to 1		//set bit to 0
-}
-
-unsigned char GetBit(unsigned char x, unsigned char k)
-{ return ((x & (0x01 << k)) != 0);}
+#include "usart.h"
+#include "bit.h"
 
 volatile unsigned char TimerFlag = 0; //TimerISR() sets this to 1. c programmer should clear to 0
 
@@ -79,127 +75,358 @@ void TimerSet(unsigned long M)
 
 }
 
-unsigned char counter=0;
-unsigned char array1[8]={0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08};
-unsigned char array2[8]={0x08,0x07,0x06,0x05,0x04,0x03,0x02,0x01};
-unsigned char array3[8]={0xFF,0xAA,0xBB,0x11,0xEE,0x22,0xEE,0x33};
-unsigned char button1=0x00;
-unsigned char button2=0x00;
-unsigned char pass_data=0;
 
-// Ensure DDRC is setup as output
-void transmit_data(unsigned char data) 
-{
+unsigned char temp;
+unsigned char hold_press;
+unsigned char press_temp;
+unsigned char GD_flag=0x00;
+unsigned char keypad_flag=0x00;
+unsigned char temp=0x00;
+unsigned char foward[8]={0x01,0x03,0x02,0x06,0x04,0x0C,0x08,0x09};
+unsigned char backward[8]={0x08,0x0C,0x04,0x06,0x02,0x03,0x01,0x09};
+unsigned char test=0x01;
 
-		//prepare for transmission
-		PORTC = SetBit(PORTC,3,1);//SRCLR
-		_delay_ms(10);// delay
-		PORTC = SetBit(PORTC,1,0); // RCLK
-		_delay_ms(10);// delay
-		
-		//transmit
-		PORTC = SetBit(PORTC,2,0); // SRCLk
-		for(int i = 0; i<8;i++)
-		{
-			PORTC = SetBit(PORTC,2,0); // SRCLk
-			PORTC = SetBit(PORTC,0,GetBit(data,i)); //SER
-			PORTC = SetBit(PORTC,2,1); // SRCLk
-		}
-		PORTC = SetBit(PORTC,2,1); // SRCLk
-		_delay_ms(10);// delay
-		PORTC = SetBit(PORTC,1,1); // RCLK
-		_delay_ms(10);// delay
-		PORTC = SetBit(PORTC,3,0);//SRCLR
-		_delay_ms(10);// delay
-
+unsigned char GetKeypadKey() {
+	
+	PORTA = 0xEF; // Enable col 4 with 0, disable others with 1’s
+	asm("nop"); // add a delay to allow PORTC to stabilize before checking
+	if (GetBit(PINA,0)==0) { return('1'); }
+	if (GetBit(PINA,1)==0) { return('2'); }
+	if (GetBit(PINA,2)==0) { return('3'); }
+	if (GetBit(PINA,3)==0) { return('A'); }
+	
+	// Check keys in col 2
+	PORTA = 0xDF; // Enable col 5 with 0, disable others with 1’s
+	asm("nop"); // add a delay to allow PORTC to stabilize before checking
+	if (GetBit(PINA,0)==0) { return('4'); }
+	if (GetBit(PINA,1)==0) { return('5'); }
+	if (GetBit(PINA,2)==0) { return('6'); }
+	if (GetBit(PINA,3)==0) { return('B'); }
+	
+	
+	// Check keys in col 3
+	PORTA = 0xBF; // Enable col 6 with 0, disable others with 1’s
+	asm("nop"); // add a delay to allow PORTC to stabilize before checking
+	if (GetBit(PINA,0)==0) { return('7'); }
+	if (GetBit(PINA,1)==0) { return('8'); }
+	if (GetBit(PINA,2)==0) { return('9'); }
+	if (GetBit(PINA,3)==0) { return('C'); }
+	
+	
+	// Check keys in col 4
+	PORTA = 0x7F;// Enable col 6 with 0, disable others with 1’s
+	asm("nop"); // add a delay to allow PORTC to stabilize before checking
+	if (GetBit(PINA,0)==0) { return('*'); }
+	if (GetBit(PINA,1)==0) { return('0'); }
+	if (GetBit(PINA,2)==0) { return('#'); }
+	if (GetBit(PINA,3)==0) { return('D'); }
+	
+	
+	return('\0'); // default value
+	
 }
 
-enum LSTATES{LS_I,LS_W,LS_A1,LS_A2,LS_A3,LS_OFF}LSTATE;
-
-void Light_tick()
+enum Key_States{KS_I, KS_W, KS_A, KS_A1, KS_A2, KS_A3, KS_Open_Close}Key_State;
+void Keypad_Tick()
 {
-	switch(LSTATE)
+	switch(Key_State)
 	{
-		case LS_I:
-			LSTATE=LS_W;
+		case KS_I:
+			Key_State=KS_W;
 		break;
 
-		case LS_W:
-			if(button1&&button2)
+		case KS_W:
+			if(hold_press=='#')
 			{
-				LSTATE=LS_OFF;
-			}
-		LSTATE=LS_W;
-		break;
-		
-		case LS_A1:
-		break;
-		
-		case LS_A2:
-		break;
-		
-		case LS_A3:
-		break;
-
-		case LS_OFF:
-			if(button1&&button2)
-			{
-				LSTATE=LS_W;
+				Key_State=KS_A;
+				PORTB = 0x01;
 			}
 			else
 			{
-				LSTATE=LS_OFF;
+				Key_State=KS_W;
+				PORTB=0x00;
+			}
+		break;
+
+		case KS_A:
+			if(hold_press=='#')
+			{
+				Key_State=KS_A;
+			}
+			else if(hold_press=='1')
+			{
+				PORTB = 0x02;
+				Key_State=KS_A1;
+				
+			}
+			else
+			{
+				Key_State=KS_W;
+				PORTB=0x00;
+			} 
+		break;
+
+		case KS_A1:
+			 if(hold_press=='1')
+			 {
+				 Key_State=KS_A1;
+			 }
+			else if(hold_press=='2')
+			{
+				PORTB = 0x04;
+				Key_State=KS_A2;
+				
+			}
+			else
+			{
+				Key_State=KS_W;
+				PORTB=0x00;
+			}
+		break;
+
+		case KS_A2:
+			 if(hold_press=='2')
+			 {
+				 Key_State=KS_A2;
+			 }
+			else if(hold_press=='3')
+			{
+				PORTB=0x08;
+				Key_State=KS_A3;	
+			}
+			else
+			{
+				Key_State=KS_W;
+				PORTB=0x00;
+			}
+		break;
+
+		case KS_A3:
+			if(hold_press=='3')
+			{
+				Key_State=KS_A3;
+			}
+			else if(hold_press=='A')
+			{
+				PORTB=0x10;
+				Key_State=KS_Open_Close;	
+			}
+			else
+			{
+				Key_State=KS_W;
+				PORTB=0x00;
+			}
+		break;
+
+		case KS_Open_Close:
+			
+			if(keypad_flag==0x00)
+			{
+				PORTB=0xFF;
+				keypad_flag=0x01;
+				GD_flag = 0x01;
+				
+				Key_State=KS_W;
+			}
+			else if(keypad_flag==0x01)
+			{
+				PORTB=0xFF;
+				keypad_flag=0x00;
+				GD_flag = 0x04;
+				Key_State=KS_W;
+			}
+			else
+			{
+				Key_State=KS_W;
+			}
+			
+		break;
+
+		default:
+			Key_State=KS_I;
+		break;
+	}
+	
+};
+
+
+unsigned char count=0x00;
+unsigned short counter=0x00;
+enum GD_STATES{GD_I, GD_W, GD_O, GD_C}GD_STATE;
+void GD_TICK()
+{
+	switch(GD_STATE)
+	{
+		case GD_I:
+		GD_STATE=GD_W;
+		break;
+		
+		case GD_W:
+			if(GD_flag == 0x01)
+			{
+				GD_STATE=GD_O;
+					
+			}
+			else if(GD_flag == 0x04)
+			{
+				GD_STATE=GD_C;
+			}
+			else
+			{
+				GD_STATE=GD_W;
 			}
 		break;
 
 
-	}		
-};
+		case GD_O:
+		if(counter<4096)
+		{
+			if(count >= 8){count=0;}
+			PORTC=foward[count];
+			count++;
+			counter++;
+			GD_STATE=GD_O;
+		}
+		else
+		{
+			count=0;
+			counter=0;
+			GD_flag=0x00;
+			GD_STATE=GD_W;
+		}
+		break;
+
+		case GD_C:
+		if(counter<4096)
+		{
+			if(count >= 8){count=0;}
+			PORTC=backward[count];
+			count++;
+			counter++;
+			GD_STATE=GD_C;
+		}
+		else
+		{
+			count=0;
+			counter=0;
+			GD_flag=0x00;
+			GD_STATE=GD_W;
+		}
+		break;
+
+		default:
+		GD_STATE=GD_I;
+		break;
+	}
+
+	switch(GD_STATE)
+	{
+		case GD_I:
+		GD_STATE=GD_W;
+		break;
+		
+		case GD_W:
+		break;
+
+
+		case GD_O:
+		break;
+
+		case GD_C:
+		break;
+
+		default:
+		GD_STATE=GD_I;
+		break;
+	}
+
+}
+
+enum TR_STATES{TR_I, TR_W}TR_STATE;
+void TR_TICK()
+{
+
+	switch(TR_STATE)
+	{
+
+		case TR_I:
+			TR_STATE=TR_W;
+		break;
+
+		case TR_W:
+			
+			if (USART_HasReceived(0))
+			{
+				PORTB=0x03;
+				//...receive data...
+				temp = USART_Receive(0);			 // write data received by USART1 to temp
+
+				if(temp==0x01)
+				{
+					temp=0x00;
+					GD_flag = 0x01;
+				}
+				else if(temp == 0x04)
+				{
+					temp=0x00;
+					GD_flag = 0x04;
+				}
+
+			}
+			TR_STATE=TR_W;	
+		break;
+
+		default:
+			TR_STATE=TR_I;
+		break;
+
+	}
+
+}
 
 
 int main(void)
 {
-	DDRC=0xFF; PORTC=0x00; 
-	DDRB=0x00; PORTB=0x0F;
-	TimerSet(50);
+	DDRA = 0xF0; PORTA = 0x0F; 
+	DDRB = 0xFF; PORTB = 0x00;
+	DDRC = 0xFF; PORTC = 0x00;
+
+	GD_STATE=GD_I;
+	Key_State=KS_I;
+	TR_STATE=TR_I;
+
+	TimerSet(3);
 	TimerOn();
+	
+	USART_Flush(0);
+	initUSART(0);
+	
+
     /* Replace with your application code */
-
-
     while (1) 
     {
-		button1 = ~PINB & 0x01;
-		button2 = ~PINB & 0x02;
 
-		if(button1)
-		{	
-			if(pass_data==0xFF)
-			{
-
-			}
-			else
-			{
-				pass_data++;
-			}
-		}
-		else if(button2)
+		press_temp=GetKeypadKey();
+		if(press_temp !='\0')
 		{
-
-			if(pass_data==0x00)
-			{
-
-			}
-			else
-			{
-				pass_data--;
-			}
-			
+			hold_press = press_temp;
 		}
-		transmit_data(pass_data);
 
-	 	while(!TimerFlag);
-	 	TimerFlag = 0;
+		Keypad_Tick();
+		GD_TICK();
+		TR_TICK();
+		//PORTB=0x10;
+
+
+		
+		while(!TimerFlag);
+		TimerFlag = 0;
+		
+		
+
+		
+
     }
+	}	
 
-}
 
