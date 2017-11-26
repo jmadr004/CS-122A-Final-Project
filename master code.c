@@ -3,8 +3,8 @@
  *	Assignment: Final Project Master Code
  *	Exercise Description: Created: 10/31/2017
  *	
- *	I acknowledge all content contained herein, excluding template,example and provided code
- *	code, is my own original work.
+ *	I acknowledge all content contained herein, excluding template,example and provided code,
+ * is my own original work.
  */ 
 
 #include <avr/io.h>
@@ -14,6 +14,15 @@
 #include <avr/pgmspace.h>
 #include "usart.h"
 
+
+unsigned char SetBit(unsigned char x, unsigned char k, unsigned char b)
+{
+	return (b ? (x|(0x01<<k)) :(x &~(0x01<<k)) );
+	//set bit to 1		//set bit to 0
+}
+
+unsigned char GetBit(unsigned char x, unsigned char k)
+{ return ((x & (0x01 << k)) != 0);}
 
 
 
@@ -98,8 +107,13 @@ unsigned char GD_Close=0x00;
 unsigned char GD_Flag=0x00;
 unsigned char temp=0x00;
 unsigned char test=0x01;
-unsigned char hold_BLE = 0x00;
+unsigned char light1=0x00;
+unsigned char light2=0x00;
+unsigned char light3=0x00;
+unsigned char light4=0x00;
+unsigned char hold_BLE =  0x20;
 short temperature;
+unsigned char temp_check_flag=0x00;
 
 
 //code provided by Carlos Antillana with his permission to use 
@@ -110,18 +124,15 @@ const unsigned char celToFarArray[100] PROGMEM = {32, 33, 35, 37, 39, 41, 42, 44
 174, 176, 177, 179, 181, 183, 185, 186, 188, 190, 192, 194, 195, 197, 199, 201, 203, 204, 206, 208, 210};
 
 
-
-
+//code provided by Carlos Antillana with his permission to use
+//https://github.com/carlossantillana/MIH/blob/master/main.c
 inline unsigned char celToFar(unsigned char C);
-
-
 
 enum FD_STATES{FD_I, FD_W, FD_O, FD_C}FD_STATE;
 void FD_TICK()
 {
 
-	FD_Open= ~PINB & 0x01;
-	FD_Close = ~PINB & 0x02;
+
 	switch(FD_STATE)
 	{
 		case FD_I:
@@ -129,11 +140,11 @@ void FD_TICK()
 		break;
 			
 		case FD_W:
-			if(FD_Open&&!FD_Close)
+			if(FD_Open == 0x01 && FD_Close == 0x00)
 			{
 				FD_STATE=FD_O;
 			}
-			else if(!FD_Open&&FD_Close)
+			else if(FD_Open == 0x00 && FD_Close == 0x01)
 			{
 				FD_STATE=FD_C;
 			}
@@ -157,6 +168,7 @@ void FD_TICK()
 			{
 				count=0;
 				counter=0;
+				FD_Open = 0x00;
 				FD_STATE=FD_W;
 			}
 		break;
@@ -174,6 +186,7 @@ void FD_TICK()
 		{
 			count=0;
 			counter=0;
+			FD_Close = 0x00;
 			FD_STATE=FD_W;
 		}
 		break;
@@ -210,8 +223,6 @@ enum GD_STATES{GD_I, GD_W, GD_O, GD_C}GD_STATE;
 void GD_TICK()
 {
 
-	GD_Open= ~PINB & 0x04;
-	GD_Close = ~PINB & 0x08;
 	switch(GD_STATE)
 	{
 		case GD_I:
@@ -219,11 +230,11 @@ void GD_TICK()
 		break;
 		
 		case GD_W:
-		if(GD_Open&&!GD_Close)
+		if(GD_Open==0x01 && GD_Close==0x00)
 		{
 			GD_STATE=GD_O;
 		}
-		else if(!GD_Open&&GD_Close)
+		else if(GD_Open==0x01 && GD_Close==0x01)
 		{
 			GD_STATE=GD_C;
 		}
@@ -233,15 +244,21 @@ void GD_TICK()
 		}
 		break;
 
-
 		case GD_O:
+			
+			GD_Open==0x00;
 			GD_Flag=0x01;
+			if(USART_IsSendReady(0))
+			{
+				USART_Send(GD_Flag,0);
+			}			
 			GD_STATE=GD_W;
 		break;
 
 		case GD_C:
+			GD_Close==0x00;
 			GD_Flag=0x04;
-			GD_STATE=GD_W;
+
 		break;
 
 		default:
@@ -256,13 +273,16 @@ void GD_TICK()
 		break;
 		
 		case GD_W:
+		GD_STATE=GD_W;
 		break;
 
 
 		case GD_O:
+		GD_STATE=GD_W;
 		break;
 
 		case GD_C:
+		GD_STATE=GD_W;
 		break;
 
 		default:
@@ -273,81 +293,356 @@ void GD_TICK()
 }
 
 
-enum TR_STATES{TR_I, TR_W}TR_STATE;
-void TR_TICK()
+enum TR0_STATES{TR0_I, TR0_W}TR0_STATE;
+void TR0_TICK()
 {
 
-	switch(TR_STATE)
+	switch(TR0_STATE)
 	{
 
-		case TR_I:
-		TR_STATE=TR_W;
+		case TR0_I:
+		TR0_STATE=TR0_W;
 		break;
 
-		case TR_W:
-		
-		if (USART_HasReceived(0))
+		case TR0_W:	
+		if(GD_Flag==0x01 || GD_Flag==0x04)
 		{
-			//...receive data...
-			temp = USART_Receive(0);			 // write data received by USART1 to temp
-		}
-
-		
-
-		if(temp==0x01)
-		{
-			PORTA = 0x01;
-		}
-		else if(temp == 0x04)
-		{
-			PORTA = 0x04;
-		}
-
-
-		
-		if(USART_IsSendReady(0))
-		{
-			USART_Send(GD_Flag,0);
-			if (USART_HasTransmitted(0))
+			if(USART_IsSendReady(0))
 			{
-				GD_Flag=0x00;
+				USART_Send(GD_Flag,0);
 			}
-			else
-			{
-				
-			}
-		}
+			
 
-		TR_STATE=TR_W;
+			GD_Flag=0x00;
+		}
+		TR0_STATE=TR0_W;
 		break;
 
 		default:
-		TR_STATE=TR_I;
+		TR0_STATE=TR0_I;
 		break;
 
 	}
 
 }
 
+
+enum TR1_STATES{TR1_I, TR1_W}TR1_STATE;
+void TR1_TICK()
+{
+
+	switch(TR1_STATE)
+	{
+
+		case TR1_I:
+		TR1_STATE=TR1_W;
+		break;
+
+		case TR1_W:
+			if(temp_check_flag==0x00)
+			{
+				
+			}
+			else
+			{
+				if(USART_IsSendReady(1))
+				{
+					USART_Send(temperature,1);
+					if (USART_HasTransmitted(1))
+					{
+						//PORTA=0x01;
+					}
+					else
+					{
+						//PORTA=0x00;
+					}
+				}
+				temp_check_flag=0x00;
+			}
+			TR1_STATE=TR1_W;
+		break;
+
+		default:
+		TR1_STATE=TR1_I;
+		break;
+
+	}
+
+}
+
+
+enum RX1_STATES{RX1_I, RX1_W, RX1_0, RX1_1,RX1_2,RX1_3,RX1_4,RX1_5,RX1_6,RX1_7,RX1_8,RX1_9}RX1_STATE;
+void RX1_TICK()
+{
+	//transitions
+	switch(RX1_STATE)
+	{
+		case RX1_I:
+			RX1_STATE=RX1_W;
+		break;
+
+		case RX1_W:
+			if (USART_HasReceived(1))
+			{
+				//...receive data...
+				temp = USART_Receive(1);			 // write data received by USART1 to temp
+			
+				hold_BLE = temp - 48;
+			}
+
+			if(hold_BLE==0)
+			{
+				RX1_STATE=RX1_0;
+			}
+			else if(hold_BLE==1)
+			{
+				RX1_STATE=RX1_1;
+			}
+			else if(hold_BLE==2)
+			{
+				RX1_STATE=RX1_2;
+			}
+			else if(hold_BLE==3)
+			{
+				RX1_STATE=RX1_3;
+			}
+			else if(hold_BLE==4)
+			{
+				RX1_STATE=RX1_4;
+			}
+			else if(hold_BLE==5)
+			{
+				RX1_STATE=RX1_5;
+			}
+			else if(hold_BLE==6)
+			{
+				RX1_STATE=RX1_6;
+			}
+			else if(hold_BLE==7)
+			{
+				RX1_STATE=RX1_7;
+			}
+			else if(hold_BLE==8)
+			{
+				RX1_STATE=RX1_8;
+			}
+			else if(hold_BLE==9)
+			{
+				RX1_STATE=RX1_9;
+			}
+			else
+			{
+				RX1_STATE=RX1_W;
+			}
+		break;
+
+		case RX1_0:
+			RX1_STATE=RX1_0;
+		break;
+
+		case RX1_1:
+			RX1_STATE=RX1_1;
+		break;
+
+		case RX1_2:
+			RX1_STATE=RX1_2;
+		break;
+
+		case RX1_3:
+			RX1_STATE=RX1_3;
+		break;
+
+		case RX1_4:
+			RX1_STATE=RX1_4;
+		break;
+
+		case RX1_5:
+			RX1_STATE=RX1_5;
+		break;
+
+		case RX1_6:
+			RX1_STATE=RX1_6;
+		break;
+
+		case RX1_7:
+			RX1_STATE=RX1_7;
+		break;
+
+		case RX1_8:
+			RX1_STATE=RX1_8;
+		break;
+
+		case RX1_9:
+			RX1_STATE=RX1_9;
+		break;
+
+		default:
+			RX1_STATE=RX1_I;
+		break;
+	}
+
+	//actions
+	switch(RX1_STATE)
+	{
+		case RX1_I:
+		break;
+
+		case RX1_W:
+		break;
+
+		case RX1_0:
+			temp_check_flag = 0x01;
+			hold_BLE = 0x20;
+			RX1_STATE=RX1_W;
+		break;
+
+		case RX1_1:
+			FD_Open = 0x01;
+			hold_BLE = 0x20;
+			RX1_STATE=RX1_W;
+		break;
+
+		case RX1_2:
+			FD_Close = 0x01;
+			hold_BLE = 0x20;
+			RX1_STATE=RX1_W;
+		break;
+
+		case RX1_3:
+			GD_Flag=0x01;
+			hold_BLE = 0x20;
+			RX1_STATE=RX1_W;
+		break;
+
+		case RX1_4:
+			GD_Flag=0x04;
+			hold_BLE = 0x20;
+			RX1_STATE=RX1_W;
+		break;
+
+		case RX1_5:
+			if(light1==0x00)
+			{
+				PORTB = SetBit(PORTB,0,1);
+				light1=0x01;
+			}
+			else if(light1==0x01)
+			{
+				PORTB = SetBit(PORTB,0,0);
+				light1=0x00;
+			}
+			hold_BLE = 0x20;
+			RX1_STATE=RX1_W;
+		break;
+
+		case RX1_6:
+			if(light2==0x00)
+			{
+				PORTB = SetBit(PORTB,1,1);
+				light2=0x01;
+			}
+			else if(light2==0x01)
+			{
+				PORTB = SetBit(PORTB,1,0);
+				light2=0x00;
+			}
+			hold_BLE = 0x20;
+			RX1_STATE=RX1_W;
+		break;
+
+		case RX1_7:
+			if(light3==0x00)
+			{
+				PORTB = SetBit(PORTB,2,1);
+				light3=0x01;
+			}
+			else if(light3==0x01)
+			{
+				PORTB = SetBit(PORTB,2,0);
+				light3=0x00;
+			}
+			hold_BLE = 0x20;
+			RX1_STATE=RX1_W;
+		break;
+
+		case RX1_8:
+			if(light4==0x00)
+			{
+				PORTB = SetBit(PORTB,3,1);
+				light4=0x01;
+			}
+			else if(light4==0x01)
+			{
+				PORTB = SetBit(PORTB,3,0);
+				light4=0x00;
+			}
+			hold_BLE = 0x20;
+			RX1_STATE=RX1_W;
+		break;
+
+		case RX1_9:
+		break;
+
+		default:
+		RX1_STATE=RX1_I;
+		break;
+	}
+
+
+
+
+
+};
+
+
+
 void TMP_TICK()
 {
-	//code provided by Carlos Antillana with his permission to use
-	//https://github.com/carlossantillana/MIH/blob/master/main.c
-	unsigned short voltage=ADC;
-	unsigned short tmpVoltage=voltage;
-	voltage =  (tmpVoltage >> 2) + (tmpVoltage << 2);// first divide by 4 to get .25 * volt then add that value by 4 * volt
-	temperature = (voltage - 500) / 10;//turn signal to C
-	temperature = celToFar(temperature);
+
+
+		//code provided by Carlos Antillana with his permission to use
+		//https://github.com/carlossantillana/MIH/blob/master/main.c
+		unsigned short voltage=ADC;
+		unsigned short tmpVoltage=voltage;
+		voltage =  (tmpVoltage >> 2) + (tmpVoltage << 2);// first divide by 4 to get .25 * volt then add that value by 4 * volt
+		temperature = (voltage - 500) / 10;//turn signal to C
+		temperature = celToFar(temperature);
+		
+	
+	
+	if(temp_counter<=5000)
+	{
+		temp_counter++;
+	}
+	else
+	{
+		if(temperature >= 80)
+		{
+			PORTA = SetBit(PORTA,1,1);
+
+		}
+		else
+		{
+			PORTA = SetBit(PORTA,1,0);
+			
+		}
+		
+		temp_counter=0x00;
+
+	}
+	
+
 
 }
 
 int main(void)
 {
 	DDRA=0x00; PORTA=0xFF;
-	DDRB=0x00; PORTB=0xFF;
+	DDRB=0xFF; PORTB=0x00;
 	DDRC=0xFF; PORTC=0x00;
 
 	FD_STATE=FD_I;
+	TR1_STATE=TR1_I;
 	
 	initUSART(0);
 	initUSART(1);
@@ -360,50 +655,12 @@ int main(void)
 	/* Replace with your application code */
 	while (1)
 	{
-		//FD_TICK();
+		RX1_TICK();
+		FD_TICK();
 		//GD_TICK();
-		//TR_TICK();
+		TR0_TICK();
 		TMP_TICK();
-		
-		if(temp_counter < 3333)
-		{
-				temp_counter++;
-		}
-		else
-		{
-			if(USART_IsSendReady(1))
-			{
-				USART_Send(temperature,1);
-				if (USART_HasTransmitted(1))
-				{
-					//PORTA=0x01;
-				}
-				else
-				{
-					//PORTA=0x00;
-				}
-			}
-
-			temp_counter=0;
-		}
-
-	
-
-		if (USART_HasReceived(1))
-		{
-			//...receive data...
-			temp = USART_Receive(1);			 // write data received by USART1 to temp
-			
-			hold_BLE = temp - 48;
-		}
-
-			
-			
-			PORTC = temperature;
-		
-		
-
-	
+		TR1_TICK();
 		while(!TimerFlag);
 		TimerFlag = 0;
 	}
