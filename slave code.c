@@ -421,12 +421,5 @@ int main(void)
 		
 		while(!TimerFlag);
 		TimerFlag = 0;
-		
-		
-
-		
-
     }
 	}	
-
-
