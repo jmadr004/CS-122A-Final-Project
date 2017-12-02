@@ -114,6 +114,7 @@ unsigned char light4=0x00;
 unsigned char hold_BLE =  0x20;
 short temperature;
 unsigned char temp_check_flag=0x00;
+unsigned char motion_sensor;
 
 
 //code provided by Carlos Antillana with his permission to use 
@@ -245,7 +246,6 @@ void GD_TICK()
 		break;
 
 		case GD_O:
-			
 			GD_Open==0x00;
 			GD_Flag=0x01;
 			if(USART_IsSendReady(0))
@@ -258,7 +258,11 @@ void GD_TICK()
 		case GD_C:
 			GD_Close==0x00;
 			GD_Flag=0x04;
-
+			if(USART_IsSendReady(0))
+			{
+				USART_Send(GD_Flag,0);
+			}
+			GD_STATE=GD_W;
 		break;
 
 		default:
@@ -606,8 +610,7 @@ void TMP_TICK()
 		unsigned short tmpVoltage=voltage;
 		voltage =  (tmpVoltage >> 2) + (tmpVoltage << 2);// first divide by 4 to get .25 * volt then add that value by 4 * volt
 		temperature = (voltage - 500) / 10;//turn signal to C
-		temperature = celToFar(temperature);
-		
+		temperature = celToFar(temperature);	
 	
 	
 	if(temp_counter<=5000)
@@ -618,26 +621,53 @@ void TMP_TICK()
 	{
 		if(temperature >= 80)
 		{
-			PORTA = SetBit(PORTA,1,1);
-
+			PORTA = SetBit(PORTA,4,1);
 		}
 		else
 		{
-			PORTA = SetBit(PORTA,1,0);
-			
-		}
-		
+			PORTA = SetBit(PORTA,4,0);
+		}		
 		temp_counter=0x00;
+	}
+}
+
+
+enum MT_STATE{MT_I, MT_OFF, MT_ON}MT_STATE;
+void Motion_tick()
+{
+	motion_sensor = ~PINA & 0x04;
+
+	switch(MT_STATE)
+	{
+		case MT_I:
+			MT_STATE=MT_OFF;
+		break;
+
+		case MT_OFF:
+		
+			if(!motion_sensor)
+			{
+				PORTB = SetBit(PORTB,4,0);
+				MT_STATE=MT_OFF;
+			}
+			else if(motion_sensor)
+			{
+				MT_STATE=MT_ON;
+			}
+		break;
+
+
+		case MT_ON:
+			PORTB = SetBit(PORTB,4,1);
+			MT_STATE =MT_OFF;
+		break;
 
 	}
-	
-
-
 }
 
 int main(void)
 {
-	DDRA=0x00; PORTA=0xFF;
+	DDRA=0xF0; PORTA=0x0F;
 	DDRB=0xFF; PORTB=0x00;
 	DDRC=0xFF; PORTC=0x00;
 
@@ -655,12 +685,14 @@ int main(void)
 	/* Replace with your application code */
 	while (1)
 	{
+
 		RX1_TICK();
 		FD_TICK();
 		//GD_TICK();
 		TR0_TICK();
 		TMP_TICK();
 		TR1_TICK();
+		Motion_tick();
 		while(!TimerFlag);
 		TimerFlag = 0;
 	}
