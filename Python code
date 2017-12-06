@@ -1,0 +1,24 @@
+Have raspbian installed and updated and make sure your camera is enabled (you enable this by running sudo raspi-config and choose Enable Camera)
+sudo apt-get update
+sudo apt-get upgrade
+
+Install vlc
+sudo apt-get install vlc
+
+Create a script to start the stream with the following content, or run the command (you can't do anything else if you just run the command).
+sudo nano myscript.sh
+raspivid -o - -t 0 -hf -w 640 -h 360 -fps 25 | cvlc -vvv stream:///dev/stdin --sout '#rtp{sdp=rtsp://:8554}' :demux=h264
+
+Make the script runable
+sudo chmod +x myscript.sh
+If you want to start the stream automatically you have to add the script to crontab. To make this work I had to make another script runned by cron (OBS! VLC can't be run as sudo so make sure you're in the right cron). sudo nano myscript2.sh:
+
+#!/bin/bash
+/path/to/myscript.sh
+Then:
+sudo chmod +x myscript2.sh
+crontab -e
+@reboot /path/to/myscript2.sh
+
+To watch the videostream, open VLC on a computer on the same network as the raspberry pi you are using for streaming. Press Media -> Open Networkstream and paste the following in the field:
+rtsp://[IP].[TO].[THE].[PI]:8554/
